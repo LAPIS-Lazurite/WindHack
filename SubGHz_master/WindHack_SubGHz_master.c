@@ -28,7 +28,7 @@
 //
 //#define LIB_DEBUG
 //#define BREAK_MODE
-#define DEBUG
+//#define DEBUG
 
 //
 // include files
@@ -109,7 +109,7 @@
 #define SUBGHZ_PANID		( 0xabcd )
 #define RAW_BUF_SIZE_PRT	( 40 )
 #define SUBGHZ_BUF_SIZE		( 220 )
-#define SUBGHZ_ADDR_CFG_TIMEOUT ( 1000 )
+#define SUBGHZ_ADDR_CFG_TIMEOUT ( 10000 )
 // communication
 #define CMD_LINE_SIZE		( 32 )
 
@@ -890,16 +890,12 @@ static void subghz_command_decoder(uint8_t *cmdbuf)
 	Serial.println(cmdbuf);
 #endif // DEBUG
 	if (strcmp(cmdbuf, CMD_START_WRITING) == 0) {
-		SubGHz.rxDisable();
 		SubGHz.send(SUBGHZ_PANID, slave0_addr, cmdbuf, strlen(cmdbuf), NULL);
 		SubGHz.send(SUBGHZ_PANID, slave1_addr, cmdbuf, strlen(cmdbuf), NULL);
-		SubGHz.rxEnable(subghz_rx_callback);
 		if (wind_hack_param.file == FILE_CLOSED) wind_hack_param.file = FILE_OPEN_REQ;
 	} else if (strcmp(cmdbuf, CMD_STOP_WRITING) == 0) {
-		SubGHz.rxDisable();
 		SubGHz.send(SUBGHZ_PANID, slave0_addr, cmdbuf, strlen(cmdbuf), NULL);
 		SubGHz.send(SUBGHZ_PANID, slave1_addr, cmdbuf, strlen(cmdbuf), NULL);
-		SubGHz.rxEnable(subghz_rx_callback);
 		if (wind_hack_param.file == FILE_OPENED) {
 			power_on2off();
 			wind_hack_param.file = FILE_CLOSED;
@@ -954,7 +950,6 @@ static void subghz_gw_raw_post_process(void)
 		gw_data.len = 0;
 		mac.payload[mac.payload_len+1] = NULL;
 		strcpy(cmd, mac.payload);
-		Serial.println(mac.payload);
 		subghz_command_decoder(cmd);
 	}
 }
@@ -1501,7 +1496,7 @@ void loop()
 		Print.f((float)bm1383_data[1], 3);				// baro
 		Print.ln();
 #ifdef DEBUG
-//		Serial.print(txdata);
+		Serial.print(txdata);
 #endif // DEBUG
 #endif // BIN_FORMAT
 		if (wind_hack_param.file == FILE_OPENED) {

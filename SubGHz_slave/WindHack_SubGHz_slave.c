@@ -1,6 +1,4 @@
-#include "WindHack_SubGHz_slave_ide.h"		// Additional Header
-
-/* FILE NAME: WindHack_Fly.c
+/* FILE NAME: WindHack_SubGHz_slave.c
  * The MIT License (MIT)
  * 
  * Copyright (c) 2017  Lapis Semiconductor Co.,Ltd.
@@ -52,7 +50,7 @@
 // sensor
 #define CMD_START			( "st" )
 #define CMD_STOP			( "sp" )
-#define SAMPLING_RATE		KXG03_ODR_12_5HZ
+#define SAMPLING_RATE		KXG03_ODR_25HZ
 // subghz
 #define SUBGHZ_CH			( 50 )
 #define SUBGHZ_PANID		( 0xabcd )
@@ -305,7 +303,6 @@ void loop()
 	static uint8_t rx_data[SUBGHZ_BUF_SIZE];
 	short rx_len;
 	uint16_t addr;
-	uint8_t cmd2[SUBGHZ_BUF_SIZE];
 
 	if (subghz_addr_cfg_req) {
 		itmp = Serial.read();
@@ -387,17 +384,14 @@ void loop()
 		rx_len = SubGHz.readData(rx_data,SUBGHZ_BUF_SIZE);
 		if(rx_len>0)
 		{
-			noInterrupts();					// mutex start
 			SubGHz.decMac(&mac,rx_data,rx_len);
-			mac.payload[mac.payload_len+1] = NULL;
-			strcpy(cmd2, mac.payload);
 			addr = *((uint16_t*)mac.src_addr);
-			interrupts();					// mutex end
 			if (addr == master_addr) {
-				if (strcmp(cmd2, CMD_START) == 0) {
+				mac.payload[mac.payload_len+1] = NULL;
+				if (strcmp(mac.payload, CMD_START) == 0) {
 					if (my_addr == slave1_addr) delay(20);
 					sensor_start();
-				} else if (strcmp(cmd2, CMD_STOP) == 0) {
+				} else if (strcmp(mac.payload, CMD_STOP) == 0) {
 					sensor_stop();
 				} else {
 					// do nothing
