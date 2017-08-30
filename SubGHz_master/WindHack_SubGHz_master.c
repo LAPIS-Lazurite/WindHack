@@ -57,6 +57,7 @@
 #define RED_LED		 		( 6 )						// Power LED
 #define LDO3V_EN			( 9 )						// LDO3V_EN pin
 #define SDSPI_SS_PIN		( 10 )						// SPI SS pin
+#define GYRO_INT_PIN		( 10 )						// GYRO INT digital pin 16 = 10, see digitalio.c
 // led
 #define ALL_LED_OFF			( 0 )
 #define BLUE_LED_OFF		( 1 )
@@ -339,7 +340,9 @@ static void sd_print_directory(st_File_v *dir) {
 			Print.p("\t\t");
 			Print.l(File.size(&entry), DEC);
 			Print.ln();
+			led_update(BLUE_LED_ON);
 			SubGHz.send(SUBGHZ_PANID, gw_addr, tmp, strlen(tmp), NULL);// send data();
+			led_update(BLUE_LED_OFF);
 		}
 		File.close(&entry);
 	}
@@ -359,6 +362,7 @@ static void sd_dump_file(uint8_t* filename)
 {
 	static uint8_t buf[SUBGHZ_BUF_SIZE];
 	uint16_t remained;
+	SUBGHZ_MSG msg;
 
 	led_update(ORANGE_LED_ON);
 	if (SD.begin(SDSPI_SS_PIN)) {				// Is sd initialization ok?
@@ -366,7 +370,10 @@ static void sd_dump_file(uint8_t* filename)
 			while ((remained = File.available(&myFile)) != 0) {
 				if (remained > SUBGHZ_BUF_SIZE) remained = SUBGHZ_BUF_SIZE;
 				File.read(&myFile, buf, remained);
-				SubGHz.send(SUBGHZ_PANID, gw_addr, buf, remained, NULL); // send data();
+				led_update(BLUE_LED_ON);
+				msg = SubGHz.send(SUBGHZ_PANID, gw_addr, buf, remained, NULL); // send data();
+				led_update(BLUE_LED_OFF);
+//				Serial.println_long(msg,DEC);
 			}
 			File.close(&myFile);
 		}
@@ -426,8 +433,8 @@ static void kxg03_sync_init2(uint8_t slave_addr,uint8_t odr_rate,void (*func)(vo
 	rc = kxg03.write(KXG03_ACCEL_CTL,&data,1);
 	
 	// set Interrupt
-	drv_pinMode(SDSPI_SS_PIN, INPUT_PULLDOWN);
-	drv_attachInterrupt(SDSPI_SS_PIN, 6, func, RISING, false, false);
+	drv_pinMode(GYRO_INT_PIN, INPUT_PULLDOWN);
+	drv_attachInterrupt(GYRO_INT_PIN, 6, func, RISING, false, false);
 
 	// Start sensor
 	data = 0xec;
