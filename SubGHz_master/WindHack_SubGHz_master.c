@@ -192,6 +192,7 @@ WIND_HACK_STATE (*functions[])(void) = {
 
 // subghz
 uint16_t my_addr, gw_addr, master_addr, slave0_addr, slave1_addr;
+void subghz_rx_callback(uint8_t *data, uint8_t rssi, int status);	// prototype
 
 //
 // LED
@@ -363,18 +364,26 @@ static void sd_dump_file(uint8_t* filename)
 	static uint8_t buf[SUBGHZ_BUF_SIZE];
 	uint16_t remained;
 	SUBGHZ_MSG msg;
+	SUBGHZ_PARAM param;
 
 	led_update(ORANGE_LED_ON);
 	if (SD.begin(SDSPI_SS_PIN)) {				// Is sd initialization ok?
 		if (SD.exists(filename) && SD.open(filename, FILE_READ, &myFile)) {
+			SubGHz.rxDisable();
+			SubGHz.getSendMode(&param);
+			param.txRetry = 19;					// set retry 20 times, max 10 sec
+			SubGHz.setSendMode(&param);
 			while ((remained = File.available(&myFile)) != 0) {
 				if (remained > SUBGHZ_BUF_SIZE) remained = SUBGHZ_BUF_SIZE;
 				File.read(&myFile, buf, remained);
 				led_update(BLUE_LED_ON);
 				msg = SubGHz.send(SUBGHZ_PANID, gw_addr, buf, remained, NULL); // send data();
 				led_update(BLUE_LED_OFF);
-//				Serial.println_long(msg,DEC);
 			}
+			SubGHz.getSendMode(&param);
+			param.txRetry = 3;					// set retry to default
+			SubGHz.setSendMode(&param);
+			SubGHz.rxEnable(subghz_rx_callback);
 			File.close(&myFile);
 		}
 	}
