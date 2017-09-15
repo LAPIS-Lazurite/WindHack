@@ -45,6 +45,7 @@
 //
 //#define GPS_NOT_USE			// define if GPS module is not attached
 //#define BIN_FORMAT			// define if sensor data is treated as binary format
+#define AUTO_START			// define if start command from GW is not necessary (i.e, PWR_SW is trigger to start)
 
 //
 // macro definition
@@ -96,8 +97,8 @@
 // sd
 #define LOW_BIT				( 0 )
 #define HIGH_BIT			( 1 )
-#define CMD_START_WRITING	( "st" )
-#define CMD_STOP_WRITING	( "sp" )
+#define CMD_START			( "st" )
+#define CMD_STOP			( "sp" )
 #define CMD_LIST_FILES		( "lf" )
 #define CMD_DUMP_FILE		( "df" )
 // file status
@@ -780,6 +781,10 @@ static void power_off2on(void)
 #else
 	Serial2.flush();						// refresh serial buffer data for gps
 #endif // GPS_NOT_USE
+#ifdef AUTO_START
+	SubGHz.send(SUBGHZ_PANID, slave0_addr, CMD_START, strlen(CMD_START), NULL);
+	SubGHz.send(SUBGHZ_PANID, slave1_addr, CMD_START, strlen(CMD_START), NULL);
+#endif
 }
 
 static void power_on2off(void)
@@ -792,6 +797,10 @@ static void power_on2off(void)
 	kxg03.standby();									// make it enter stand-by mode
 	bm1383.power_down();								// make it enter power down mode
 	bm1422.power_down();								// make it enter power down mode
+#ifdef AUTO_START
+	SubGHz.send(SUBGHZ_PANID, slave0_addr, CMD_STOP, strlen(CMD_STOP), NULL);
+	SubGHz.send(SUBGHZ_PANID, slave1_addr, CMD_STOP, strlen(CMD_STOP), NULL);
+#endif
 }
 
 //
@@ -803,6 +812,8 @@ RX_RAW slave_data[2] = {{0, 0},{0, 0}};
 RX_RAW gw_data = {0, 0};
 bool subghz_addr_cfg_req;
 bool user_input = false;
+MOTION_DATA motion_data_slave = {{'$','M'},};
+MOTION_DATA motion_data = {{'$','M'},};
 
 void subghz_rx_callback(uint8_t *data, uint8_t rssi, int status)
 {
@@ -900,18 +911,17 @@ static void subghz_conv_payload(TX_RAW* raw, uint16_t addr, uint8_t* data, uint8
 
 static void subghz_command_decoder(uint8_t *cmdbuf)
 {
-	ldo_update(LDO3V_ON);
 #ifdef DEBUG
 	Serial.print("Received command: ");
 	Serial.println(cmdbuf);
 #endif // DEBUG
-	if (strcmp(cmdbuf, CMD_START_WRITING) == 0) {
-		SubGHz.send(SUBGHZ_PANID, slave0_addr, cmdbuf, strlen(cmdbuf), NULL);
-		SubGHz.send(SUBGHZ_PANID, slave1_addr, cmdbuf, strlen(cmdbuf), NULL);
+	if (strcmp(cmdbuf, CMD_START) == 0) {
+		SubGHz.send(SUBGHZ_PANID, slave0_addr, CMD_START, strlen(CMD_START), NULL);
+		SubGHz.send(SUBGHZ_PANID, slave1_addr, CMD_START, strlen(CMD_START), NULL);
 		if (wind_hack_param.file == FILE_CLOSED) wind_hack_param.file = FILE_OPEN_REQ;
-	} else if (strcmp(cmdbuf, CMD_STOP_WRITING) == 0) {
-		SubGHz.send(SUBGHZ_PANID, slave0_addr, cmdbuf, strlen(cmdbuf), NULL);
-		SubGHz.send(SUBGHZ_PANID, slave1_addr, cmdbuf, strlen(cmdbuf), NULL);
+	} else if (strcmp(cmdbuf, CMD_STOP) == 0) {
+		SubGHz.send(SUBGHZ_PANID, slave0_addr, CMD_STOP, strlen(CMD_STOP), NULL);
+		SubGHz.send(SUBGHZ_PANID, slave1_addr, CMD_STOP, strlen(CMD_STOP), NULL);
 		if (wind_hack_param.file == FILE_OPENED) {
 			power_on2off();
 			wind_hack_param.file = FILE_CLOSED;
@@ -931,7 +941,6 @@ static void subghz_command_decoder(uint8_t *cmdbuf)
 static void subghz_slave_raw_post_process(RX_RAW *data)
 {
  	static SUBGHZ_MAC_PARAM mac;
-	static MOTION_DATA motion_data = {{'$','M'},};
 	static uint8_t rxdata[SENSOR_BUF_SIZE];
 
 	if (data->len) {
@@ -940,14 +949,14 @@ static void subghz_slave_raw_post_process(RX_RAW *data)
 		data->len = 0;
 		interrupts();					// mutex end
 #ifdef BIN_FORMAT
-		subghz_conv_payload((TX_RAW *)mac.payload, *((uint16_t *)mac.src_addr), &motion_data);
+		subghz_conv_payload((TX_RAW *)mac.payload, *((uint16_t *)mac.src_addr), &motion_data_slave);
 #else
 		subghz_conv_payload((TX_RAW *)mac.payload, *((uint16_t *)mac.src_addr), rxdata, sizeof(rxdata));
 #endif // BIN_FORMAT
 		if (wind_hack_param.file == FILE_OPENED) {
 			led_update(ORANGE_LED_ON);
 #ifdef BIN_FORMAT
-			File.write(&myFile, (const uint8_t*)(&motion_data), sizeof(MOTION_DATA));
+			File.write(&myFile, (const uint8_t*)(&motion_data_slave), sizeof(MOTION_DATA));
 #else
 			File.write(&myFile, rxdata, strlen(rxdata));
 #endif // BIN_FORMAT
@@ -1288,6 +1297,9 @@ static WIND_HACK_STATE func_power_off(void)
 			} else {
 				led_set_sequence(LED_POWER_ON);
 			}
+#ifdef AUTO_START
+			if (wind_hack_param.file == FILE_CLOSED) wind_hack_param.file = FILE_OPEN_REQ;
+#endif
 			mode = STATE_POWER_ON;
 		}
 	}
@@ -1301,6 +1313,7 @@ static WIND_HACK_STATE func_power_on(void)
 	static bool	deb_start = false;						// debounce start flag
 
 	if (wind_hack_param.file == FILE_OPEN_REQ) {
+		ldo_update(LDO3V_ON);
 		if (SD.begin(SDSPI_SS_PIN)) {				// Is sd initialization ok?
 #ifdef DEBUG
 			Serial.println("sd initializing successed.");
@@ -1341,6 +1354,10 @@ static WIND_HACK_STATE func_power_on(void)
 #ifdef DEBUG
 				Serial.println("power switch is changed to OFF in STATE_POWER_ON.");
 #endif
+				if (wind_hack_param.file == FILE_OPENED) {
+					power_on2off();
+					wind_hack_param.file = FILE_CLOSED;
+				}
 				power_on2off();
 				ldo_update(LDO3V_OFF);
 				SubGHz.rxDisable();
@@ -1450,7 +1467,6 @@ void loop()
 	static uint32_t p_sensor_ts = 0;
 	static uint16_t seq_num = 0;
 #ifdef BIN_FORMAT
-	MOTION_DATA motion_data = {{'$','M'},};
 #else
  	static uint8_t txdata[SENSOR_BUF_SIZE];
 	static uint8_t kxg03_buf[KXG03_BUF_SIZE];
