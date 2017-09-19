@@ -1,7 +1,7 @@
 /* FILE NAME: WindHack_SubGHz_slave.c
  * The MIT License (MIT)
  * 
- * Copyright (c) 2017  Lapis Semiconductor Co.,Ltd.
+ * Copyright (c) 2017  LAPIS Semiconductor Co.,Ltd.
  * All rights reserved.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -36,6 +36,7 @@
 #include "WindHack_SubGHz_slave_ide.h"		// Additional Header
 #include <stdlib.h>
 #include <string.h>
+#include "../kxg03_new2/kxg03_new2.c"
 
 //
 // macro switch
@@ -78,18 +79,6 @@ bool kxg03_irq = false; // true = kxg03 interrupt occured, false = interrupt cle
 static void kxg03_isr(void)
 {
 	kxg03_irq = true;
-}
-
-static uint8_t kxg03_get_raw_val(uint8_t* data)
-{
-	uint8_t rc;
-	
-	rc = kxg03.read(KXG03_GYRO_XOUT_L,data,12);
-	if(rc!=12) {
-		Serial.print("I2C ERROR=");
-		Serial.println_long((long)rc,DEC);
-	}
-	return rc;
 }
 
 static void sensor_start(void)
@@ -373,7 +362,7 @@ void loop()
 
 			tx_raw.seq_num++;								// sequence number
 			tx_raw.deltaT = deltaT;							// delta t
-			kxg03_get_raw_val(tx_raw.kxg03_raw);			// accel & gyro
+			kxg03.get_raw_val(tx_raw.kxg03_raw);			// accel & gyro
 			bm1422.get_rawval(tx_raw.bm1422_raw);			// mag
 			bm1383.get_rawtemppressval(tx_raw.bm1383_raw);	// baro
 			digitalWrite(BLUE_LED,LOW);
