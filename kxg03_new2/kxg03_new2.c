@@ -7,7 +7,6 @@
 
 // basic access parameters
 static uint8_t slave_addr;
-#if 1
 static uint8_t kxg03_acc_range=0;					// 2g
 static uint8_t kxg03_acc_avr=KXG03_ACC_AVR_128;
 static uint8_t kxg03_gyro_range=0;					// 256 deg/sec
@@ -119,7 +118,7 @@ static float kalman_cal(KALMAN_PARAM *param,float newAngle, float newRate){
 	
 	return param->angle;
 }
-#endif
+
 static uint8_t kxg03_read(uint8_t addr,uint8_t* data,uint8_t size)
 {
 	byte rc;
@@ -194,7 +193,7 @@ static uint8_t kxg03_init(uint8_t i2c_addr)
 	*/
 	return (rc);  
 }
-#if 1
+
 static uint8_t kxg03_get_val(float* val)
 {
 	uint8_t rc;
@@ -217,6 +216,18 @@ static uint8_t kxg03_get_val(float* val)
 	val[4] = (float)data.d16[4]/acc_div[kxg03_acc_range];
 	val[5] = (float)data.d16[5]/acc_div[kxg03_acc_range];
 	
+	return rc;
+}
+
+static uint8_t kxg03_get_raw_val(uint8_t* data)
+{
+	uint8_t rc;
+	
+	rc = kxg03.read(KXG03_GYRO_XOUT_L,data,12);
+	if(rc!=12) {
+//		Serial.print("I2C ERROR=");
+//		Serial.println_long((long)rc,DEC);
+	}
 	return rc;
 }
 
@@ -329,7 +340,7 @@ static int kxg03_set_acc_range(uint8_t acc_range)
 
 
 /*
-// int kxg03_set_gyro_range(uint8_t gyro_range);
+    int kxg03_set_gyro_range(uint8_t gyro_range);
 	parameters:
 		#define KXG03_GYRO_RANGE_256	0x00
 		#define KXG03_GYRO_RANGE_512	0x40
@@ -661,7 +672,7 @@ void kxg03_set_deg_out(bool deg_out)
 	if(deg_out) kxg03_out_flag |= KXG03_DEG_OUT;
 	else kxg03_out_flag &= ~KXG03_DEG_OUT;
 }
-#endif
+
 static uint8_t kxg03_standby(void)
 {
 	uint8_t rc;
@@ -675,13 +686,14 @@ static uint8_t kxg03_standby(void)
 	// }
 	return rc;
 }
-#if 1
+
 const KXG03 kxg03 ={
 	kxg03_init,					//	uint8_t (*init)(uint8_t slave_addr);
 	kxg03_sync_init,			//	uint8_t (*sync_init)(uint8_t slave_addr,uint8_t odr_rate,void (*func)(void));
 	kxg03_read,					// 	uint8_t (*read)(uint8_t addr, uint8_t* data, uint8_t size);
 	kxg03_write,				//	uint8_t (*write)(uint8_t addr, uint8_t* data, uint8_t size);
 	kxg03_get_val,				//	uint8_t (*get_val)(float* val);
+	kxg03_get_raw_val,			//  uint8_t (*get_raw_val)(uint8_t* data);
 	kxg03_get_gyro,				//	uint8_t (*get_gyro)(float* gyro);
 	kxg03_get_acc,				//	uint8_t (*get_acc)(float* acc);
 	kxg03_set_acc_avr,			//	int (*set_acc_avr)(uint8_t acc_avr);
@@ -702,4 +714,3 @@ const KALMAN kalman = {
 	kalman_set,
 	kalman_cal
 };
-#endif

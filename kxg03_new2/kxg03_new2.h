@@ -167,6 +167,7 @@ typedef struct {
 	uint8_t (*read)(uint8_t addr, uint8_t* data, uint8_t size);
 	uint8_t (*write)(uint8_t addr, uint8_t* data, uint8_t size);
 	uint8_t (*get_val)(float* val);
+	uint8_t (*get_raw_val)(uint8_t* data);
 	uint8_t (*get_gyro)(float* gyro);
 	uint8_t (*get_acc)(float* acc);
 	int (*set_acc_avr)(uint8_t acc_avr);
