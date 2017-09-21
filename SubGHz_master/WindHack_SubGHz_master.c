@@ -44,7 +44,7 @@
 // macro switch
 //
 //#define GPS_NOT_USE			// define if GPS module is not attached
-#define BIN_FORMAT			// define if sensor data is treated as binary format
+//#define BIN_FORMAT			// define if sensor data is treated as binary format
 //#define AUTO_START			// define if start command from GW is not necessary (i.e, PWR_SW is trigger to start)
 
 //
@@ -337,6 +337,9 @@ static void sd_print_directory(st_File_v *dir) {
 			Print.l(File.size(&entry), DEC);
 			Print.ln();
 			led_update(BLUE_LED_ON);
+#ifdef DEBUG
+			Serial.println(tmp);
+#endif
 			SubGHz.send(SUBGHZ_PANID, gw_addr, tmp, strlen(tmp), NULL);// send data();
 			led_update(BLUE_LED_OFF);
 		}
@@ -350,6 +353,10 @@ static void sd_list_files(void)
 	if (SD.begin(SDSPI_SS_PIN)) {				// Is sd initialization ok?
 		SD.open("/", FILE_READ, &myRoot);
 		sd_print_directory(&myRoot);
+	} else {
+#ifdef DEBUG
+		Serial.println("SD.begin failed.");
+#endif
 	}
 	led_update(ORANGE_LED_OFF);
 }
@@ -370,7 +377,15 @@ static void sd_dump_file(uint8_t* filename)
 				led_update(BLUE_LED_OFF);
 			}
 			File.close(&myFile);
+		} else {
+#ifdef DEBUG
+			Serial.println("SD.open failed.");
+#endif
 		}
+	} else {
+#ifdef DEBUG
+		Serial.println("SD.begin failed.");
+#endif
 	}
 	led_update(ORANGE_LED_OFF);
 }
@@ -384,8 +399,17 @@ static uint8_t sd_file_open(void)
 		sd_make_filename();
 		if (SD.open(filename, FILE_WRITE, &myFile)) {
 			ret = 0;
+		} else {
+#ifdef DEBUG
+			Serial.println("SD.open failed.");
+#endif
 		}
+	} else {
+#ifdef DEBUG
+		Serial.println("SD.begin failed.");
+#endif
 	}
+	
 	return ret;
 }
 
@@ -857,18 +881,25 @@ static void subghz_command_decoder(uint8_t *cmdbuf)
 		SubGHz.send(SUBGHZ_PANID, slave1_addr, CMD_STOP, strlen(CMD_STOP), NULL);
 		if (wind_hack_param.file != FILE_CLOSED) {
 			sensor_off_lowbat_check_stop();
+			ldo_update(LDO3V_OFF);
 			if (wind_hack_param.file == FILE_OPENED) sd_file_close();
 			wind_hack_param.file = FILE_CLOSED;
 		}
 	} else if (strcmp(cmdbuf, CMD_LIST_FILES) == 0) {
-		if (wind_hack_param.file == FILE_CLOSED) sd_list_files();
+		if (wind_hack_param.file == FILE_CLOSED) {
+			ldo_update(LDO3V_ON);
+			sd_list_files();
+			ldo_update(LDO3V_OFF);
+		}
 	} else if (strncmp(cmdbuf, CMD_DUMP_FILE, 2) == 0) {	// "df[brank]filename"
 		if (wind_hack_param.file == FILE_CLOSED) {
 			strcpy(filename, &cmdbuf[3]);
 			SubGHz.getSendMode(&param);
 			param.txRetry = 19;					// set retry 20 times, max 10 sec
 			SubGHz.setSendMode(&param);
+			ldo_update(LDO3V_ON);
 			sd_dump_file(filename);
+			ldo_update(LDO3V_OFF);
 			SubGHz.getSendMode(&param);
 			param.txRetry = 3;					// set retry to default
 			SubGHz.setSendMode(&param);
