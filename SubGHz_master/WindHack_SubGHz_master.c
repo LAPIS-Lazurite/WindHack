@@ -44,7 +44,7 @@
 // macro switch
 //
 //#define GPS_NOT_USE			// define if GPS module is not attached
-//#define BIN_FORMAT			// define if sensor data is treated as binary format
+#define BIN_FORMAT			// define if sensor data is treated as binary format
 //#define AUTO_START			// define if start command from GW is not necessary (i.e, PWR_SW is trigger to start)
 
 //
@@ -340,7 +340,7 @@ static void sd_print_directory(st_File_v *dir) {
 #ifdef DEBUG
 			Serial.println(tmp);
 #endif
-			SubGHz.send(SUBGHZ_PANID, gw_addr, tmp, strlen(tmp), NULL);// send data();
+			SubGHz.send(SUBGHZ_PANID, gw_addr, tmp, strlen(tmp), NULL);
 			led_update(BLUE_LED_OFF);
 		}
 		File.close(&entry);
@@ -373,7 +373,7 @@ static void sd_dump_file(uint8_t* filename)
 				if (remained > SUBGHZ_BUF_SIZE) remained = SUBGHZ_BUF_SIZE;
 				File.read(&myFile, buf, remained);
 				led_update(BLUE_LED_ON);
-				SubGHz.send(SUBGHZ_PANID, gw_addr, buf, remained, NULL); // send data();
+				SubGHz.send(SUBGHZ_PANID, gw_addr, buf, remained, NULL);
 				led_update(BLUE_LED_OFF);
 			}
 			File.close(&myFile);
@@ -457,17 +457,14 @@ static void kxg03_sync_init2(uint8_t slave_addr,uint8_t odr_rate,void (*func)(vo
 	rc = kxg03.write(KXG03_INT_PIN1_SEL,&data,1);
 
 	// set ACC ODR
-//	data = odr_rate | (kxg03_acc_avr<<4);
 	data = odr_rate | (KXG03_ACC_AVR_128<<4);
 	rc = kxg03.write(KXG03_ACCEL_ODR_WAKE ,&data,1);
 	
 	// set GYRO ODR to 25Hz
-//	data = odr_rate | (kxg03_gyro_range<<6) | (kxg03_gyro_bw<<4);
 	data = odr_rate | (0<<6) | (0<<4);
 	rc = kxg03.write(KXG03_GYRO_ODR_WAKE,&data,1);
 	
 		// set ACC_RANGE
-//	data = (kxg03_acc_range<<2);
 	data = (0<<2);
 	rc = kxg03.write(KXG03_ACCEL_CTL,&data,1);
 	
@@ -873,11 +870,13 @@ static void subghz_command_decoder(uint8_t *cmdbuf)
 	SubGHz.setAckReq(true);
 	if (strcmp(cmdbuf, CMD_START) == 0) {
 		SubGHz.send(SUBGHZ_PANID, slave0_addr, CMD_START, strlen(CMD_START), NULL);
+		delay(5);
 		SubGHz.send(SUBGHZ_PANID, slave1_addr, CMD_START, strlen(CMD_START), NULL);
 		SubGHz.setAckReq(false);
 		if (wind_hack_param.file == FILE_CLOSED) sensor_start_req = true;
 	} else if (strcmp(cmdbuf, CMD_STOP) == 0) {
 		SubGHz.send(SUBGHZ_PANID, slave0_addr, CMD_STOP, strlen(CMD_STOP), NULL);
+		delay(5);
 		SubGHz.send(SUBGHZ_PANID, slave1_addr, CMD_STOP, strlen(CMD_STOP), NULL);
 		if (wind_hack_param.file != FILE_CLOSED) {
 			sensor_off_lowbat_check_stop();
@@ -931,6 +930,15 @@ static void subghz_slave_raw_post_process(RX_RAW *data)
 			File.write(&myFile, txdata, strlen(txdata));
 #endif // BIN_FORMAT
 			led_update(ORANGE_LED_OFF);
+		} else if (wind_hack_param.file == FILE_NOT_USE) {
+			led_update(BLUE_LED_ON);
+#ifdef BIN_FORMAT
+			SubGHz.send(SUBGHZ_PANID, gw_addr, (uint8_t*)(&motion_data_slave.raw), sizeof(TX_RAW), NULL);
+#else
+	Serial.println(txdata);
+			SubGHz.send(SUBGHZ_PANID, gw_addr, txdata, strlen(txdata), NULL);
+#endif // BIN_FORMAT
+			led_update(BLUE_LED_OFF);
 		}
 	}
 }
@@ -995,6 +1003,12 @@ static void gps_command_decoder(uint8_t* cmdbuf)
 			led_update(ORANGE_LED_ON);
 			File.write(&myFile, strcat(cmdbuf, "\r\n"), strlen(cmdbuf));
 			led_update(ORANGE_LED_OFF);
+		} else if (wind_hack_param.file == FILE_NOT_USE) {
+			SubGHz.setAckReq(true);
+			led_update(BLUE_LED_ON);
+			SubGHz.send(SUBGHZ_PANID, gw_addr, strcat(cmdbuf, "\r\n"), strlen(cmdbuf), NULL);
+			led_update(BLUE_LED_OFF);
+			SubGHz.setAckReq(false);
 		}
 	} else if (rtc_gps_sync_req && (strcmp(cmdbuf2, NMEA_GPZDA) == 0)) {
 #ifdef DEBUG
@@ -1258,6 +1272,10 @@ static WIND_HACK_STATE func_power_off(void)
 				SubGHz.begin(SUBGHZ_CH, SUBGHZ_PANID, SUBGHZ_100KBPS, SUBGHZ_PWR_20MW);
 				SubGHz.rxEnable(subghz_rx_callback);
 #ifdef AUTO_START
+				SubGHz.send(SUBGHZ_PANID, slave0_addr, CMD_START, strlen(CMD_START), NULL);
+				delay(5);
+				SubGHz.send(SUBGHZ_PANID, slave1_addr, CMD_START, strlen(CMD_START), NULL);
+				SubGHz.setAckReq(false);
 				sensor_start_req = true;
 #endif
 				mode = STATE_POWER_ON;
@@ -1276,15 +1294,19 @@ static WIND_HACK_STATE func_power_on(void)
 	if (sensor_start_req) {
 		sensor_start_req = false;
 		ldo_update(LDO3V_ON);
-		if (sd_file_open() != 0) {					// SD open failed
-			ldo_update(LDO3V_OFF);
-			wind_hack_param.file = FILE_CLOSED;
-			led_set_sequence(LED_SDCARD_ERROR);
-			mode = STATE_POWER_OFF;
-		} else {									// SD open successed
-			sensor_on_lowbat_check_start();
-			wind_hack_param.file = FILE_OPENED;
+		if (digitalRead(RF_SW) != LOW)	{				// RF_SW is OFF, SD card mode
+			if (sd_file_open() != 0) {					// SD open failed
+				ldo_update(LDO3V_OFF);
+				wind_hack_param.file = FILE_CLOSED;
+                led_set_sequence(LED_SDCARD_ERROR);
+				mode = STATE_POWER_OFF;
+			} else {									// SD open successed
+				wind_hack_param.file = FILE_OPENED;
+			}
+		} else {
+			wind_hack_param.file = FILE_NOT_USE;		// GW transfer mode
 		}
+		sensor_on_lowbat_check_start();
 	} else if (pwr_sw_irq) {
 		if (!deb_start) {
 			deb_start = true;
@@ -1482,6 +1504,14 @@ void loop()
 			File.write(&myFile, txdata, strlen(txdata));
 #endif // BIN_FORMAT
 			led_update(ORANGE_LED_OFF);
+		} else if (wind_hack_param.file == FILE_NOT_USE) {
+			led_update(BLUE_LED_ON);
+#ifdef BIN_FORMAT
+			SubGHz.send(SUBGHZ_PANID, gw_addr, (uint8_t*)(&motion_data.raw), sizeof(TX_RAW), NULL);
+#else
+			SubGHz.send(SUBGHZ_PANID, gw_addr, txdata, strlen(txdata), NULL);
+#endif // BIN_FORMAT
+			led_update(BLUE_LED_OFF);
 		}
 	}
 

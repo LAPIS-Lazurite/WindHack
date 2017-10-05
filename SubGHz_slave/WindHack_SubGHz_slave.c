@@ -378,7 +378,6 @@ void loop()
 			if (addr == master_addr) {
 				mac.payload[mac.payload_len+1] = NULL;
 				if (strcmp(mac.payload, CMD_START) == 0) {
-					if (my_addr == slave1_addr) delay(20);
 					sensor_start();
 				} else if (strcmp(mac.payload, CMD_STOP) == 0) {
 					sensor_stop();
