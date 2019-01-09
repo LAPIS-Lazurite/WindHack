@@ -43,8 +43,8 @@
 //
 // macro switch
 //
-//#define GPS_NOT_USE			// define if GPS module is not attached
-#define BIN_FORMAT			// define if sensor data is treated as binary format
+#define GPS_NOT_USE			// define if GPS module is not attached
+//#define BIN_FORMAT			// define if sensor data is treated as binary format
 //#define AUTO_START			// define if start command from GW is not necessary (i.e, PWR_SW is trigger to start)
 
 //
@@ -110,7 +110,7 @@
 #define SUBGHZ_PANID		( 0xabcd )
 #define RAW_BUF_SIZE_PRT	( 40 )
 #define SUBGHZ_BUF_SIZE		( 220 )
-#define SUBGHZ_ADDR_CFG_TIMEOUT ( 10000 )
+#define SUBGHZ_ADDR_CFG_TIMEOUT ( 5000 )
 // communication
 #define CMD_LINE_SIZE		( 32 )
 
@@ -332,10 +332,10 @@ static void sd_print_directory(st_File_v *dir) {
 		}
 		if (!File.isDirectory(&entry)) {
 			Print.init(tmp, sizeof(tmp));
+			Print.p("name: ");
 			Print.p(File.name(&entry));
-			Print.p("\t\t");
+			Print.p(" size: ");
 			Print.l(File.size(&entry), DEC);
-			Print.ln();
 			led_update(BLUE_LED_ON);
 #ifdef DEBUG
 			Serial.println(tmp);
@@ -658,18 +658,17 @@ static uint8_t rtc_char_to_dec(uint8_t *chr)
 	return (uint8_t)((chr[0] - '0') * 10 + (chr[1] - '0'));
 }
 
-static void rtc_adjustment(uint8_t* time, uint8_t* dd, uint8_t* mm, uint8_t* yyyy)
+static void rtc_adjustment(uint8_t* hhmmss, uint8_t* ddmmyy)
 {
 	uint8_t hour, min, sec, day, month, year;
 
-	hour = rtc_char_to_dec(time); time++; time++;
-	min = rtc_char_to_dec(time); time++; time++;
-	sec = rtc_char_to_dec(time);
+	hour = rtc_char_to_dec(hhmmss); hhmmss++; hhmmss++;
+	min = rtc_char_to_dec(hhmmss); hhmmss++; hhmmss++;
+	sec = rtc_char_to_dec(hhmmss);
 
-	day = rtc_char_to_dec(dd);
-	month = rtc_char_to_dec(mm);
-	yyyy++; yyyy++;
-	year = rtc_char_to_dec(yyyy);
+	day = rtc_char_to_dec(ddmmyy); ddmmyy++; ddmmyy++;
+	month = rtc_char_to_dec(ddmmyy); ddmmyy++; ddmmyy++;
+	year = rtc_char_to_dec(ddmmyy);
 
 	RTC.setTime(hour, min, sec);
 	RTC.setDate(day, month, year);
@@ -682,15 +681,17 @@ static bool rtc_gps_sync(uint8_t* cmdbuf)
 {
 	uint8_t i = 0;
 	static uint8_t* pparam[20];
+	uint8_t* ptr;
 
-	pparam[i] = strtok(cmdbuf,",.");					// command sprit
+	pparam[i] = strtok(cmdbuf,",");					// command sprit
 	do {
 		i++;
-	} while((pparam[i] = strtok(NULL,",.")) != NULL);
+	} while((pparam[i] = strtok(NULL,",")) != NULL);
 	// No problem : Warning : W5028 : Assignment within conditional expression
 
-	if (strcmp(pparam[5], NMEA_INVALID_YEAR) != 0) {
-		rtc_adjustment(pparam[1], pparam[3], pparam[4], pparam[5]);
+	if (strcmp(pparam[2], "A") == 0) {
+		ptr = strtok(pparam[1], ".");
+		rtc_adjustment(ptr, pparam[9]);
 		return true;
 	} else {
 		return false;
@@ -728,6 +729,65 @@ static void power_switch_isr(void)
 	pwr_sw_irq = true;
 }
 
+uint8_t htos(uint8_t h)
+{
+	uint8_t c;
+	if (h < 10) {
+		c = '0' + h;
+	} else {
+		c = 'A' + h - 10;
+	}
+	return c;
+}
+
+void gps_init(void)
+{
+//	const uint8_t gps_cmd[] = {"$PMTK314,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0*28"};   // GPRMC, GPZDA
+	const uint8_t gps_cmd[] = {"$PMTK314,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0*29\r\n"};   // GPRMC Only
+	const uint8_t gps_cmd2[] = {"$PMTK301,2*2E\r\n"};	// DGPS mode 2(WAAS)
+//	const uint8_t gps_ack[] = {"$PMTK001,604,3*36"};
+	static uint8_t gps_buf[256];
+	uint8_t chksum = 0;
+	uint8_t strChksum[3] = {0};
+	uint8_t i;
+
+	// send command
+	for (i=0;i<5;i++) {
+		sleep(500);
+//		Serial.print(gps_cmd);
+		Serial2.print(gps_cmd);
+	}
+	sleep(1000);
+	for (i=0;i<5;i++) {
+		sleep(500);
+//		Serial.print(gps_cmd2);
+		Serial2.print(gps_cmd2);
+	}
+/*	Serial.println(gps_cmd2);
+	Serial2.print(gps_cmd2);
+	Serial2.flush();
+	// receive ack
+	i=0;
+	for (;;) {
+		if (Serial2.available() > 0) {
+			if ((gps_buf[i] = (uint8_t)Serial2.read()) != '\r') {
+				i++;
+			} else {
+				gps_buf[i] = NULL;
+				i = 0;
+				Serial.println(gps_buf);
+				if (strcmp(gps_buf, gps_ack) == 0) {
+					Serial.println("ACK received.");
+					break;
+				} else {
+					Serial.println("Not ACK.");
+				}
+			}
+		}
+	}
+*/
+}
+
 static void sensor_on_lowbat_check_start(void)
 {
 	if (wind_hack_param.file == FILE_OPENED) {
@@ -741,6 +801,7 @@ static void sensor_on_lowbat_check_start(void)
 	bm1422.init(BM1422_DEVICE_ADDRESS_0E);
 #ifdef GPS_NOT_USE
 #else
+	gps_init();
 	Serial2.flush();						// refresh serial buffer data for gps
 #endif // GPS_NOT_USE
 }
@@ -880,8 +941,8 @@ static void subghz_command_decoder(uint8_t *cmdbuf)
 		SubGHz.send(SUBGHZ_PANID, slave1_addr, CMD_STOP, strlen(CMD_STOP), NULL);
 		if (wind_hack_param.file != FILE_CLOSED) {
 			sensor_off_lowbat_check_stop();
-			ldo_update(LDO3V_OFF);
 			if (wind_hack_param.file == FILE_OPENED) sd_file_close();
+			ldo_update(LDO3V_OFF);
 			wind_hack_param.file = FILE_CLOSED;
 		}
 	} else if (strcmp(cmdbuf, CMD_LIST_FILES) == 0) {
@@ -950,7 +1011,7 @@ static void subghz_gw_raw_post_process(void)
 	if (gw_data.len) {
 		SubGHz.decMac(&mac, gw_data.raw, gw_data.len);
 		gw_data.len = 0;
-		mac.payload[mac.payload_len+1] = NULL;
+		mac.payload[mac.payload_len] = 0;
 		strcpy(cmd, mac.payload);
 		subghz_command_decoder(cmd);
 	}
@@ -1010,33 +1071,31 @@ static void gps_command_decoder(uint8_t* cmdbuf)
 			led_update(BLUE_LED_OFF);
 			SubGHz.setAckReq(false);
 		}
-	} else if (rtc_gps_sync_req && (strcmp(cmdbuf2, NMEA_GPZDA) == 0)) {
+		if (rtc_gps_sync_req) {
+			if (rtc_gps_sync(cmdbuf)) {
 #ifdef DEBUG
-		Serial.println(cmdbuf);
+				Serial.println("rtc is sync'd with gps.");
+				Print.init(rtcdata,sizeof(rtcdata));
+				Print.l(RTC.getYear(), 10);
+				Print.p("/");
+				Print.l(RTC.getMonth(), 10);
+				Print.p("/");
+				Print.l(RTC.getDay(), 10);
+				Print.p(" ");
+				Print.l(RTC.getHours(), 10);
+				Print.p(":");
+				Print.l(RTC.getMinutes(), 10);
+				Print.p(":");
+				Print.l(RTC.getSeconds(), 10);
+				Print.ln();
+				Serial.print(rtcdata);
 #endif
-		if (rtc_gps_sync(cmdbuf)) {
+				rtc_gps_sync_req = false;
+			} else {
 #ifdef DEBUG
-			Serial.println("rtc is sync'd with gps.");
-			Print.init(rtcdata,sizeof(rtcdata));
-			Print.l(RTC.getYear(), 10);
-			Print.p("/");
-			Print.l(RTC.getMonth(), 10);
-			Print.p("/");
-			Print.l(RTC.getDay(), 10);
-			Print.p(" ");
-			Print.l(RTC.getHours(), 10);
-			Print.p(":");
-			Print.l(RTC.getMinutes(), 10);
-			Print.p(":");
-			Print.l(RTC.getSeconds(), 10);
-			Print.ln();
-			Serial.print(rtcdata);
+				Serial.println("rtc sync failed.");
 #endif
-			rtc_gps_sync_req = false;
-		} else {
-#ifdef DEBUG
-			Serial.println("rtc sync failed.");
-#endif
+			}
 		}
 	} else {
 		// do nothing
@@ -1179,6 +1238,7 @@ static WIND_HACK_STATE func_boot_init(void)
 	} else {
 		led_update(ALL_LED_OFF);
 		ldo_update(LDO3V_OFF);
+//		if (0) {
 		if (!subghz_addr_check()) {
 #ifdef DEBUG
 			Serial.println("One of the SubGHz address is invalid.");
@@ -1301,6 +1361,9 @@ static WIND_HACK_STATE func_power_on(void)
                 led_set_sequence(LED_SDCARD_ERROR);
 				mode = STATE_POWER_OFF;
 			} else {									// SD open successed
+#ifdef DEBUG
+				Serial.println("SD open is successed.");
+#endif
 				wind_hack_param.file = FILE_OPENED;
 			}
 		} else {
@@ -1377,8 +1440,6 @@ static WIND_HACK_STATE func_power_on(void)
 //
 void setup()
 {
-	static const uint8_t gps_cmd[] = {"$PMTK314,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0*28"};   // GPRMC only
-
 	Serial.begin(115200);
 
 	pinMode(BLUE_LED, OUTPUT);
@@ -1401,7 +1462,7 @@ void setup()
 	attachInterrupt(0, power_switch_isr, CHANGE);		// attach power switch interrupt handler
 
 	File.init(&myFile);
-// subghz
+	// subghz
 	SubGHz.init();
 	my_addr = SubGHz.getMyAddress();
 
@@ -1414,11 +1475,10 @@ void setup()
 	rtc_gps_sync_req = false;
 #else
 	Serial2.begin(9600L);
-	Serial2.println(gps_cmd);
 	rtc_gps_sync_req = true;
 #endif // GPS_NOT_USE
 
-// subghz
+	// subghz
 	subghz_addr_cfg_req = true;
 	timer2.set(SUBGHZ_ADDR_CFG_TIMEOUT, subghz_addr_check_isr);	// set subghz address config callback
 	timer2.start();
@@ -1451,6 +1511,7 @@ void loop()
 		if ((data == 0x0D) || (data == 0x0A)) {			// if end of line
 			if ((bufp > 0) && (bufp < GPS_BUF_SIZE)) {
 				gps_buf[bufp] = NULL;
+//				Serial.println(gps_buf);
 				gps_command_decoder(gps_buf);
 			}
 			bufp = 0;
